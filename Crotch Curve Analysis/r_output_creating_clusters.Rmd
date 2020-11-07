@@ -1,0 +1,184 @@
+---
+title: "Fatma Baytar Data Analysis"
+author: "Jennifer Russell (jjr265) & Toshihiro Tokuyama (tt426)"
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+## Introduction
+
+In clothing patternmaking, knowing the customers measurements can make fitting much more accurate, therefore ensuring a better fitting garmet. Most fashion brands currently operate under the assumption that bodies fit a standard model, when in reality body shapes come in many different shapes and sizes. When measuring for pants, the crotch curve measurement is not taken for privacy's sake, although this measurement can drastically impact the overall fit of the garment. To better design womens pants, we look at the measurements, including crotch curves, of 404 White woman from the Civilian American and European Surface Anthropomentry Resource (CAESAR) 3D  body scan database to try to gain insight into the features of the crotch curves and how this knowledge may help design more accurate shapes to utilize in pattern making. We wanted to focus on predicted curves for a few groups of women since most brands use standard sizing and don't design custom pieces for their customers.
+
+```{r include=FALSE}
+library(readxl)
+#setwd("~/Documents/Fall 2020/BTRY 4950/Fatma") 
+WhiteWomen <- read_excel("WhiteWomen.xlsx")
+```
+
+## Forming Clusters
+
+Inititally, in order to draw conclusions for women of different body shapes, we wanted to cluster the women based on their basic measurements: BMI, Height, and Max Hip. We also used the basic crotch measurements given in order to account for the fact that women of similar basic measurements like BMI and height can have very different body types.
+
+```{r include=FALSE}
+cluster_data = subset( WhiteWomen, select= -c(Curve, Comments))
+head(cluster_data)
+```
+
+```{r echo=FALSE}
+cluster_data = subset( WhiteWomen, select= -c(Subject, Curve, Comments))
+cluster_data = cluster_data[-c(226),] # remove row because outlier
+
+wss <- (nrow(cluster_data)-1)*sum(apply(cluster_data,2,var))
+for (i in 2:15) wss[i] <- sum(kmeans(cluster_data,
+   centers=i)$withinss)
+plot(1:15, wss, type="b", xlab="Number of Clusters",
+  ylab="Within groups sum of squares")
+```
+This graph shows us that after about 3 groups, there is little significant decrease in the within groups sum of squares. This suggests that 3 clusters might have a good fit. 
+
+We then use the library NBClust, which uses many indices to provide a majority-rule opinion about how many clusters to use based off the results of all the indices tests.
+
+```{r echo=FALSE}
+library(NbClust)
+set.seed(1234)
+clust_results <- NbClust(cluster_data, min.nc=2, max.nc=15, method="kmeans")
+```
+
+```{r echo=FALSE}
+barplot(table(clust_results$Best.n[1,]),
+              xlab="Numer of Clusters", ylab="Number of Criteria",
+                    main="Number of Clusters Chosen by 26 Criteria")
+table(clust_results$Best.n[1,])
+```
+Since we arrived to the conclusion of 3 clusters using the NBClust package, we will stick with that in our further analysis. 
+
+## K-Means Clusters
+
+Next, we use the kmeans function in R to perform the clustering. We pass 3 as the argument for how many clusters since that was the conclusion of our prior analysis. To get an idea of the three clusters, shown below is the mean measurements for women in all of the three groups. Based off of this, we now have clusters of 3 clusters of women with similar measurements, and also what they're average crotch curve measurements would be. While the clusters did utilize measurements such as crotch length and crotch depth, we believe it would be feasible to determine with relatively high accuracy which cluster a future women would belong to off of her basic measurements. 
+
+```{r echo=FALSE}
+# K-Means 
+cluster_fit <- kmeans(cluster_data, 3) # 5 cluster solution
+# get cluster means
+aggregate(cluster_data,by=list(cluster_fit$cluster),FUN=mean)
+# append cluster assignment
+cluster_data <- data.frame(cluster_data, cluster_fit$cluster)
+```
+To get a better understanding of the three clusters created, we look at box-plots detailing the averages and range of measurements by women in the three clusters.  
+
+```{r echo=FALSE}
+type1 = subset(cluster_data, cluster_fit.cluster == 1)
+type2 = subset(cluster_data, cluster_fit.cluster == 2)
+type3 = subset(cluster_data, cluster_fit.cluster == 3)
+
+par(mfrow=c(2, 3))
+boxplot(type1$BMI, type2$BMI, type3$BMI, names=c(1, 2, 3), xlab='Cluster Type', ylab='BMI')
+boxplot(type1$Height, type2$Height, type3$Height, names=c(1, 2, 3), xlab='Cluster Type', ylab='Height')
+boxplot(type1$Max.Hip, type2$Max.Hip, type3$Max.Hip, names=c(1, 2, 3), xlab='Cluster Type', ylab='Max Hip')
+boxplot(type1$Crotch.curve.length.at.trochanter, type2$Crotch.curve.length.at.trochanter, type3$Crotch.curve.length.at.trochanter, names=c(1, 2, 3), xlab='Cluster Type', ylab='Crotch Curve Length')
+boxplot(type1$Anterior.posterior.Length, type2$Anterior.posterior.Length, type3$Anterior.posterior.Length, names=c(1, 2, 3), xlab='Cluster Type', ylab='Anterior Posterior Length')
+boxplot(type1$Depth, type2$Depth, type3$Depth, names=c(1, 2, 3), xlab='Cluster Type', ylab='Depth')
+```
+From the box plots we see a general trend: cluster 2 have the highest average values for all variables except height. However, making predictions from the box plots will be difficult because for most variables because the interquartile overlaps. If we were take make predictions of the cluster fits, using the max hip variable will provide the most accurate predictions as the interquartile range do not overlap.
+
+# Creating a General Curve for Each Cluster
+
+Now that we know the characteristics that seperates clusters, we try to plot a general curve shapes for each cluster. We first find the images that corresponds to each cluster fit by going through the image folder and searching the image that matches the observation.
+```{r include=FALSE}
+# Get the row index of each cluster
+type1_rows = as.numeric(rownames(cluster_data[cluster_data$cluster_fit.cluster==1,]))
+type2_rows = as.numeric(rownames(cluster_data[cluster_data$cluster_fit.cluster==2,]))
+type3_rows = as.numeric(rownames(cluster_data[cluster_data$cluster_fit.cluster==3,]))
+```
+```{r include=FALSE}
+cluster_fit_1_image = c()
+cluster_fit_2_image = c()
+cluster_fit_3_image = c()
+
+filenames = read.table('files.txt', header=FALSE, stringsAsFactors = FALSE)$V1
+
+for (i in 1:length(filenames)){
+  if (i %in% type1_rows == TRUE){
+    cluster_fit_1_image = append(cluster_fit_1_image, filenames[i])
+  } else if (i %in% type2_rows) {
+    cluster_fit_2_image = append(cluster_fit_2_image, filenames[i])
+  } else {
+    cluster_fit_3_image = append(cluster_fit_3_image, filenames[i])
+  }
+}
+```
+
+Then to get an general curve shape, we will compute the average grey scale value for each pixel for each cluster fit. However, since all the image files have different pixels, we resize all images to 91x200 pixels. This process will lose some information for the images, possibly making the general curve shape less accurate.
+```{r include=FALSE}
+library(png)
+
+find_mean_pixels = function(cluster_image){
+  sum_pixels = matrix(0, nrow=91, ncol=200) # total number of pixels
+  for (image in cluster_image){
+    pic = readPNG( gsub(" ", "", paste('orig_png/', image)), info=TRUE)
+    grey = apply(pic, c(1,2), FUN=mean)
+    sum_pixels = sum_pixels + grey
+  }
+  return (sum_pixels/length(cluster_image))
+}
+
+cluster_1_pixels = find_mean_pixels(cluster_fit_1_image)
+cluster_2_pixels = find_mean_pixels(cluster_fit_2_image)
+cluster_3_pixels = find_mean_pixels(cluster_fit_3_image)
+```
+
+We create a basic curve from the average grey scale matrix computed for each cluster fit by using maximum dark pixel position as value of y and x-value as the pixel index. These curves, along with the average measurements of women from the three groups, can be used to determine a more presice crotch curve measurements for large, but distinct, groups of women. The code used to create the curve images is taken from *Processing png image files into Curves* R notebook.
+```{r echo=FALSE}
+find_first_dip = function(v){
+  return(which.min(v)[1])
+}
+
+get_coordinates = function(cluster_pixel){
+  x = seq(ncol(cluster_pixel))
+  y = rep(0, length(x))
+  
+  for (j in x){
+    y[j] = find_first_dip(rev(cluster_pixel[,j])) # which.min(pic[,j])[1]
+  }
+  
+  return (list(x = x, y = y))
+}
+
+cluster_1_coordinates = get_coordinates(cluster_1_pixels)
+cluster_2_coordinates = get_coordinates(cluster_2_pixels)
+cluster_3_coordinates = get_coordinates(cluster_3_pixels)
+```
+```{r echo=FALSE}
+plot(cluster_1_coordinates$x, cluster_1_coordinates$y, type='l', lwd=2, main = "General Curve for Cluster 1", ylab = "Maximum Dark Pixel Position", xlab = "Pixel Index")
+plot(cluster_2_coordinates$x, cluster_2_coordinates$y, type='l', lwd=2, main = "General Curve for Cluster 2", ylab = "Maximum Dark Pixel Position", xlab = "Pixel Index")
+plot(cluster_3_coordinates$x, cluster_3_coordinates$y, type='l', lwd=2, main = "General Curve for Cluster 3", ylab = "Maximum Dark Pixel Position", xlab = "Pixel Index")
+```
+# Characteristics of Each Curve
+
+From the three plots we see that the difference of the curves is visible in the range of 25 to 40 and 160 to 190 for pixel index. The characeristics of each curve are described below:
+
+## Curve for Cluster 1
+
+- There is a large bump aroud pixel 30.
+- Two small bumps around pixel 175 and 190.
+
+## Curve for Cluster 2
+
+- A small bump around pixel 40.
+- Multiple bumps from pixel 160 to 190.
+
+## Curve for Cluster 3
+
+- Small bumps around pixel 20
+- Multiple small bumps from pixel 160 to 175.
+- Compared to cluster 1 and cluster 2, the curve is generally smoothe.
+
+Therefore, when drafting patterns the designers should pay close attention to these bumps will make the curve irregular.
+
+## Conclusion 
+
+In all, we recommend that patternmaking for womens pants focus on three main bodytype clusters. While each groups average curves are not perfect, they are more precise frameworks for crotch curve measurements. This additional accuracy in crotch curve measurements will significantly affect the fit of womens pants so pants can be more tailored to the wearer. We hope the identification of these three body type clusters and their respective crotch curves will help to inform future patternmaking and research regarding pant fit.
